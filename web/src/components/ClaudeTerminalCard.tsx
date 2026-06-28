@@ -444,6 +444,14 @@ const hexToRgb = (hex: string): [number, number, number] | null => {
 const FLOW_ACK_EVERY_BYTES = 100_000;
 const utf8Encoder = new TextEncoder();
 
+// ── live terminal title persistence ──────────────────────────────────────────
+// How long a window title must hold steady before we persist it as the session's
+// real name (renameSession). Claude Code rewrites the title every animation
+// frame while it works (spinner glyph), so debouncing means only the SETTLED
+// title — the conversation context it lands on, ✓ and all — is written to the
+// backend; the rapid intermediate frames still render live in the tab.
+const TITLE_PERSIST_DEBOUNCE_MS = 1500;
+
 // Touch-primary device (phone/tablet), independent of which LAYOUT is
 // rendered. A phone in landscape is wider than the mobile breakpoint and
 // shows the DESKTOP layout by design (Nathan keeps it as an escape hatch,
@@ -599,6 +607,23 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
   // input value. Null editingId means no rename is in progress.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState('');
+
+  // ── live terminal title → tab label ─────────────────────────────────────────
+  // Claude Code (and anything that sets the window title via an OSC 0/2 escape)
+  // drives the PowerShell tab title to the live conversation context — a spinner
+  // glyph while it works, a ✓ when it's done. xterm parses those OSC sequences
+  // and fires term.onTitleChange (wired up in ensureBundle); we mirror the
+  // latest title into the tab here so the dashboard shows the same live-updating
+  // name as a native terminal. liveTitles[id] takes precedence over the stored
+  // label for display; a settled title is debounce-persisted as the real session
+  // name so it survives a reload (the OSC title is NOT part of the screen-state
+  // replay, so without persistence an idle session would lose its name).
+  const [liveTitles, setLiveTitles] = useState<Record<string, string>>({});
+  // Sessions the operator manually renamed — auto-title stops overwriting them.
+  // Page-lifetime only: a reload starts every session back in auto mode.
+  const pinnedTitlesRef = useRef<Set<string>>(new Set());
+  // Per-session debounce timers for persisting a settled title to the backend.
+  const titlePersistTimersRef = useRef<Map<string, number>>(new Map());
   // Double-tap-to-close safety: first tap on × sets this to the session id and
   // arms a timeout; second tap on the same × (or any tap after timeout) actually
   // closes. Tapping a different tab's × resets to that tab. Clicking anywhere
@@ -884,6 +909,42 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
   }, []);
 
 
+  // Ref mirrors so the title-persist debounce (which fires outside render) reads
+  // the CURRENT label / edit state without the callbacks being re-created.
+  const sessionsRef = useRef(sessions);
+  sessionsRef.current = sessions;
+  const editingIdRef = useRef(editingId);
+  editingIdRef.current = editingId;
+
+  // Write a settled window title back as the session's real name. Skips pinned
+  // (manually-renamed) tabs, a tab being actively edited, and no-op renames.
+  const persistTitle = useCallback((id: string, title: string) => {
+    if (pinnedTitlesRef.current.has(id)) return;
+    if (editingIdRef.current === id) return;
+    const cur = sessionsRef.current.find(s => s.id === id);
+    if (!cur || cur.label === title) return;
+    setSessions(prev => prev.map(s => s.id === id ? { ...s, label: title } : s));
+    // Non-fatal: the live title still shows even if the backend write fails.
+    renameSession(id, title).catch(() => { /* ignore — display already updated */ });
+  }, []);
+
+  // term.onTitleChange handler: show the new title live, then debounce-persist
+  // it once it stops changing. The backend caps labels at 64 chars; mirror that
+  // here so a runaway title can't desync the optimistic label from what sticks.
+  const handleTermTitle = useCallback((id: string, rawTitle: string) => {
+    if (pinnedTitlesRef.current.has(id)) return;
+    const title = rawTitle.trim().slice(0, 64);
+    if (!title) return;
+    setLiveTitles(prev => (prev[id] === title ? prev : { ...prev, [id]: title }));
+    const timers = titlePersistTimersRef.current;
+    const existing = timers.get(id);
+    if (existing) window.clearTimeout(existing);
+    timers.set(id, window.setTimeout(() => {
+      timers.delete(id);
+      persistTitle(id, title);
+    }, TITLE_PERSIST_DEBOUNCE_MS));
+  }, [persistTitle]);
+
   // ── xterm + WS lifecycle: ensure a bundle exists for each session ──────────
   // Called via ref callback when each per-session container element mounts.
   // Idempotent — once a bundle is created for a session id, never recreate it
@@ -1067,6 +1128,10 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
         ws.send(JSON.stringify({ type: 'resize', rows, cols }));
       }
     });
+
+    // Mirror the live window title (OSC 0/2 — what Claude Code drives to the
+    // conversation context + status glyph) into this session's tab label.
+    term.onTitleChange(title => handleTermTitle(id, title));
 
     // ── momentum touch-scroll ────────────────────────────────────────────────
     // xterm's default touch handling intercepts swipes for selection and the
@@ -1752,7 +1817,7 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
       };
     };
     connect();
-  }, [xtermTheme, isMobile, bumpRender]);
+  }, [xtermTheme, isMobile, bumpRender, handleTermTitle]);
 
   // ── ResizeObserver on the host: refit every visible terminal whenever the
   // card area changes (window resize, mobile rotation, tab-switch back) ─────
@@ -1855,6 +1920,7 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
   // We do NOT kill the sessions on the backend — persistence is the point.
   useEffect(() => {
     const bundles = bundlesRef.current;
+    const titleTimers = titlePersistTimersRef.current;
     return () => {
       bundles.forEach(b => {
         if (b.reconnectTimer) window.clearTimeout(b.reconnectTimer);
@@ -1867,6 +1933,8 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
         b.term.dispose();
       });
       bundles.clear();
+      titleTimers.forEach(t => window.clearTimeout(t));
+      titleTimers.clear();
     };
   }, []);
 
@@ -2134,6 +2202,15 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
       b.term.dispose();
       bundlesRef.current.delete(id);
     }
+    // Drop the closed session's live-title state so a future id reuse starts clean.
+    const titleTimer = titlePersistTimersRef.current.get(id);
+    if (titleTimer) { window.clearTimeout(titleTimer); titlePersistTimersRef.current.delete(id); }
+    pinnedTitlesRef.current.delete(id);
+    setLiveTitles(prev => {
+      if (!(id in prev)) return prev;
+      const { [id]: _drop, ...rest } = prev;
+      return rest;
+    });
     const remaining = sessions.filter(s => s.id !== id);
     setSessions(remaining);
     // Backfill the freed pane with the first session not already on screen;
@@ -2170,16 +2247,28 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
 
   const handleRenameCommit = useCallback((id: string) => {
     const trimmed = editLabel.trim();
-    if (trimmed && trimmed !== sessions.find(s => s.id === id)?.label) {
-      // Optimistic update: apply the label locally immediately, then fire
-      // the API call. If the API fails, revert.
-      const prevLabel = sessions.find(s => s.id === id)?.label ?? '';
-      setSessions(prev => prev.map(s => s.id === id ? { ...s, label: trimmed } : s));
-      renameSession(id, trimmed).catch(err => {
-        // Revert on failure
-        setSessions(prev => prev.map(s => s.id === id ? { ...s, label: prevLabel } : s));
-        setError(err instanceof Error ? err.message : String(err));
+    if (trimmed) {
+      // A manual rename pins the tab: auto-title stops overwriting it, any live
+      // title now showing is dropped, and a pending title-persist is cancelled.
+      pinnedTitlesRef.current.add(id);
+      const titleTimer = titlePersistTimersRef.current.get(id);
+      if (titleTimer) { window.clearTimeout(titleTimer); titlePersistTimersRef.current.delete(id); }
+      setLiveTitles(prev => {
+        if (!(id in prev)) return prev;
+        const { [id]: _drop, ...rest } = prev;
+        return rest;
       });
+      if (trimmed !== sessions.find(s => s.id === id)?.label) {
+        // Optimistic update: apply the label locally immediately, then fire
+        // the API call. If the API fails, revert.
+        const prevLabel = sessions.find(s => s.id === id)?.label ?? '';
+        setSessions(prev => prev.map(s => s.id === id ? { ...s, label: trimmed } : s));
+        renameSession(id, trimmed).catch(err => {
+          // Revert on failure
+          setSessions(prev => prev.map(s => s.id === id ? { ...s, label: prevLabel } : s));
+          setError(err instanceof Error ? err.message : String(err));
+        });
+      }
     }
     setEditingId(null);
     setEditLabel('');
@@ -2466,6 +2555,10 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
               b.status === 'open'  ? theme.green :
               b.status === 'connecting' ? theme.amber :
               theme.text3;
+            // Live window title (Claude Code's conversation context + status
+            // glyph) wins over the stored label; falls back to it before any
+            // title arrives and for manually-renamed (pinned) tabs.
+            const displayName = liveTitles[s.id] ?? s.label;
             return (
               <div key={s.id}
                 onClick={() => { clearPendingClose(); setShowAgents(false); handleTabClick(s.id); }}
@@ -2518,9 +2611,15 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
                   />
                 ) : (
                   <span
-                    onDoubleClick={(e) => handleRenameStart(s.id, s.label, e)}
-                    title="Double-click to rename"
-                  >{s.label}</span>
+                    onDoubleClick={(e) => handleRenameStart(s.id, displayName, e)}
+                    title={`${displayName} — double-click to rename`}
+                    style={{
+                      maxWidth: isMobile ? 130 : 220,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >{displayName}</span>
                 )}
                 <span
                   onClick={(e) => handleCloseTab(s.id, e)}
