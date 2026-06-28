@@ -8,5 +8,5 @@ echo.
 echo Starting server on http://localhost:8080
 echo Frontend dev server: cd web ^&^& npm run dev
 echo.
-python -m uvicorn server.app:app --host 127.0.0.1 --port 8080
+python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8080
 pause

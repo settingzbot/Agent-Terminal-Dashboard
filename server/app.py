@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from server.routes_terminal import terminal_router, claude_router
@@ -67,5 +68,13 @@ def create_app() -> FastAPI:
                 StaticFiles(directory=assets_dir),
                 name="dashboard_assets",
             )
+
+        # Serve the SPA entry point at the root.
+        index_file = WEB_DIST_DIR / "index.html"
+        if index_file.is_file():
+
+            @app.get("/", include_in_schema=False)
+            async def serve_index():
+                return FileResponse(index_file)
 
     return app
