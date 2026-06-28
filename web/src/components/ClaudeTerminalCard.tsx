@@ -2336,6 +2336,11 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
         /* display:none (not width:0) — newer Chrome on Windows otherwise still
            draws a gray fluent overlay scrollbar on hover. */
         .xterm .xterm-viewport::-webkit-scrollbar { display: none; }
+        /* xterm also renders its OWN VSCode-style overlay scrollbar — a .slider
+           div (cream at 20% alpha, reads as gray) inside .xterm-scrollable-element
+           that fades in on hover. It's a real element, not a native scrollbar, so
+           the rules above don't touch it. Hide it too; wheel-scroll still works. */
+        .xterm .xterm-scrollable-element > .scrollbar { display: none !important; }
         .claude-chat-input { scrollbar-width: none; }
         .claude-chat-input::-webkit-scrollbar { display: none; }
         ${isMobile ? `
