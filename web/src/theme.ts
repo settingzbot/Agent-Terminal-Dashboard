@@ -78,6 +78,50 @@ export const BRIGHTNESS_MIN = 0;
 export const BRIGHTNESS_MAX = 100;
 export const DEFAULT_BRIGHTNESS = 0;
 
+// Accent (the app's primary color) is a continuous HSL: a hue dial around the
+// full 0–360 wheel, a saturation dial for how vivid it reads, and a fixed
+// lightness of 50 (the brightness dial drives the PAGE, not the accent). The
+// original dashboard shipped amber — hue 43, saturation 95 (see App.tsx's old
+// hard-coded hslToHex(43, 95, 50)).
+export const HUE_MIN = 0;
+export const HUE_MAX = 360;
+export const SATURATION_MIN = 0;
+export const SATURATION_MAX = 100;
+export const ACCENT_LIGHTNESS = 50;
+export const DEFAULT_HUE = 43;
+export const DEFAULT_SATURATION = 95;
+
+// Background tint. A subtle hue wash applied to the PAGE background (bg0) only —
+// surfaces, cards and text stay neutral, so the page reads as gently colored
+// behind a stack of neutral glass. 0 = OFF (neutral bg = the original look, so
+// existing users see no change until they opt in); 1–360 picks the wash hue.
+// The wash is mixed at a fixed gentle strength and keeps bg0's perceived
+// lightness, so the brightness dial still owns dark↔light independently.
+export const BG_TINT_MIN = 0;
+export const BG_TINT_MAX = 360;
+export const DEFAULT_BG_TINT = 0;
+// How vivid the injected hue is (BG_TINT_SAT) and how far bg0 is mixed toward it
+// (BG_TINT_STRENGTH). Tuned low on purpose: a cast, not a color.
+const BG_TINT_SAT = 65;
+const BG_TINT_STRENGTH = 0.14;
+
+// The three user-tunable theme dials, persisted as one object. `hue` +
+// `saturation` build the accent (via hslToHex at ACCENT_LIGHTNESS); `brightness`
+// feeds deriveTheme to lerp the whole page dark->light.
+export type ThemeSettings = {
+  hue: number;        // 0–360
+  saturation: number; // 0–100
+  brightness: number; // 0–100
+  bgTint: number;     // 0 = off, 1–360 = background hue wash
+};
+
+export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
+  hue: DEFAULT_HUE,
+  saturation: DEFAULT_SATURATION,
+  brightness: DEFAULT_BRIGHTNESS,
+  bgTint: DEFAULT_BG_TINT,
+};
+
 const BG0_DARK = '#0f0e0c';
 // Flat white light-mode page bg (was warm cream #f5f0e3 -- Nathan wanted no
 // cream tint at all). Every other light surface below is on a neutral gray
@@ -204,10 +248,21 @@ export function withAlpha(hex: string, a: number): string {
   return `rgba(${r},${g},${b},${a})`;
 }
 
-export function deriveTheme(brightness: number): Theme {
+// Wash a hue over a neutral bg color while preserving its perceived lightness,
+// so the brightness dial still drives dark↔light. bgTint 0 passes the neutral
+// color straight through (no tint). Returns hex — several call sites concat
+// alpha onto theme.bg0 (`${theme.bg0}cc`), so this MUST stay #rrggbb.
+function tintBg(bg: string, bgTint: number): string {
+  if (bgTint <= 0) return bg;
+  const { r, g, b } = parseColor(bg);
+  const lightness = ((r + g + b) / 3 / 255) * 100;
+  return lerpHex(bg, hslToHex(bgTint, BG_TINT_SAT, lightness), BG_TINT_STRENGTH);
+}
+
+export function deriveTheme(brightness: number, bgTint: number = DEFAULT_BG_TINT): Theme {
   const t = clamp01(brightness / 100);
   const m = smoothstep(FLIP_START, FLIP_END, t);
-  const bg0 = lerpHex(BG0_DARK, BG0_LIGHT, t);
+  const bg0 = tintBg(lerpHex(BG0_DARK, BG0_LIGHT, t), bgTint);
   // bg0Glass is just bg0 at 55% opacity -- cheap version, used by mobile bars.
   // Parse the lerped bg0 hex back to rgb for the rgba string.
   const r = parseInt(bg0.slice(1, 3), 16);

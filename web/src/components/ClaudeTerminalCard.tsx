@@ -74,10 +74,11 @@ import {
   createSession, killSession, listSessions, renameSession, terminalWsUrl, uploadClaudeFile,
   type TerminalSession,
 } from '../api/terminal';
-import { type Theme } from '../theme';
+import { type Theme, type ThemeSettings } from '../theme';
 import { useKeyboardHeightPx } from '../hooks/useKeyboardHeightPx';
 import { useAgentPulse } from '../hooks/useAgentPulse';
 import { AgentManagerPane } from './AgentManager/AgentManagerPane';
+import { ThemeControls } from './ThemeControls';
 
 // BOTTOM_TAB_BAR_HEIGHT_CSS inlined from BottomTabBar.tsx to avoid the dependency.
 // Original: 'calc(52px + env(safe-area-inset-bottom, 0px))'
@@ -132,6 +133,10 @@ const readLastKbdPx = (): number => {
 type Props = {
   theme: Theme;
   accent: string;
+  // Current theme dials + setter, threaded down so the tab-strip ThemeControls
+  // dropdown can recolor the whole app live (owned/persisted in App.tsx).
+  themeSettings: ThemeSettings;
+  onThemeChange: (next: ThemeSettings) => void;
   isMobile?: boolean;
   isActive?: boolean;
 };
@@ -515,7 +520,7 @@ type Bundle = {
   pendingTakeover: boolean;
 };
 
-export function ClaudeTerminalCard({ theme, accent, isMobile = false, isActive = true }: Props) {
+export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange, isMobile = false, isActive = true }: Props) {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   // The Agent Manager tab (leftmost in the strip) is a non-terminal view; when
   // true the host area is hidden and AgentManagerPane is shown full-width. A
@@ -2316,7 +2321,9 @@ export function ClaudeTerminalCard({ theme, accent, isMobile = false, isActive =
             frosted-glass bg shows through.
           - iOS Safari needs `-webkit-overflow-scrolling: touch` + `touch-action: pan-y`
             on the scroll container before swipes scroll the buffer instead of the page.
-          - Hide xterm's scrollbar on mobile — momentum touch-scroll replaces it. */}
+          - Hide xterm's scrollbar everywhere — on desktop the browser default renders
+            as a bright white track over the frosted-glass card; wheel-scroll replaces
+            it. On mobile, momentum touch-scroll replaces it (Nathan, 2026-06-28). */}
       <style>{`
         .xterm, .xterm .xterm-viewport, .xterm .xterm-screen {
           background-color: transparent !important;
@@ -2324,10 +2331,14 @@ export function ClaudeTerminalCard({ theme, accent, isMobile = false, isActive =
         .xterm .xterm-viewport {
           -webkit-overflow-scrolling: touch;
           touch-action: pan-y;
+          scrollbar-width: none;
         }
+        /* display:none (not width:0) — newer Chrome on Windows otherwise still
+           draws a gray fluent overlay scrollbar on hover. */
+        .xterm .xterm-viewport::-webkit-scrollbar { display: none; }
+        .claude-chat-input { scrollbar-width: none; }
+        .claude-chat-input::-webkit-scrollbar { display: none; }
         ${isMobile ? `
-          .xterm .xterm-viewport::-webkit-scrollbar { width: 0; height: 0; }
-          .xterm .xterm-viewport { scrollbar-width: none; }
           /* Contenteditable placeholder — mimics input::placeholder. The
              [data-empty="true"] flag is flipped from React on every input
              event so the placeholder hides as soon as the user types. */
@@ -2338,8 +2349,6 @@ export function ClaudeTerminalCard({ theme, accent, isMobile = false, isActive =
             font-size: 13px;
             pointer-events: none;
           }
-          .claude-chat-input::-webkit-scrollbar { width: 0; height: 0; }
-          .claude-chat-input { scrollbar-width: none; }
         ` : ''}
       `}</style>
       <div
@@ -2640,6 +2649,15 @@ export function ClaudeTerminalCard({ theme, accent, isMobile = false, isActive =
               <option key={s} value={s}>{s}px</option>
             ))}
           </select>
+          {/* Theme color dropdown — hue / saturation / brightness sliders that
+              recolor the whole dashboard live. Owned + persisted in App.tsx. */}
+          <ThemeControls
+            settings={themeSettings}
+            onChange={onThemeChange}
+            theme={theme}
+            accent={accent}
+            isMobile={isMobile}
+          />
           {/* Split-view toggle (desktop only) — 1/2/3 terminals side by side.
               Sessions stay alive either way; this only changes how many panes
               are visible at once. */}
