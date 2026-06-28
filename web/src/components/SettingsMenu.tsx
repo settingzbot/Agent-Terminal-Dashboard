@@ -18,7 +18,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { performRestart } from '../api/dashboard';
+import { performRestart, performShutdown } from '../api/dashboard';
 import { restartTerminalManager } from '../api/terminal';
 import { restartAgentManager } from '../api/agents';
 import { ThemeControls } from './ThemeControls';
@@ -70,10 +70,20 @@ export function SettingsMenu({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [restart, setRestart] = useState<RestartState>('idle');
+  // Full-stop lifecycle for the "Exit & Shut Down Everything" button. Its
+  // middle three states line up with ShutdownState from performShutdown; the
+  // extra 'idle'/'confirm' drive the two-click destructive-confirm gate.
+  const [shutdown, setShutdown] = useState<'idle' | 'confirm' | 'shutting-down' | 'done' | 'error'>('idle');
   const btnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   // Fixed-position anchor for the portaled panel, measured from the button.
   const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+  // Auto-disarm timer for the shutdown confirm (mirrors ManagerRow's pattern).
+  const shutdownTimer = useRef<number | null>(null);
+  const clearShutdownTimer = () => {
+    if (shutdownTimer.current !== null) { window.clearTimeout(shutdownTimer.current); shutdownTimer.current = null; }
+  };
+  useEffect(() => clearShutdownTimer, []);
 
   // Keep the panel pinned under the button across resizes / strip scrolls.
   useLayoutEffect(() => {
@@ -117,6 +127,23 @@ export function SettingsMenu({
   const doRestart = () => {
     if (restart === 'restarting') return;
     void performRestart(setRestart);
+  };
+
+  // Exit & Shut Down Everything — the full-stop counterpart to doRestart. Two
+  // clicks (the second within 4s) to confirm, then drive performShutdown, whose
+  // 'shutting-down' | 'done' | 'error' states feed straight into setShutdown. No
+  // reload afterward: nothing relaunches, so the dashboard is gone for good.
+  const doShutdown = () => {
+    if (shutdown === 'shutting-down' || shutdown === 'done') return;
+    // First click only arms the confirm, auto-reverting to idle after 4s.
+    if (shutdown !== 'confirm') {
+      setShutdown('confirm');
+      clearShutdownTimer();
+      shutdownTimer.current = window.setTimeout(() => setShutdown('idle'), 4000);
+      return;
+    }
+    clearShutdownTimer();
+    void performShutdown(setShutdown);
   };
 
   // ── shared styles ──────────────────────────────────────────────────────────
@@ -372,6 +399,68 @@ export function SettingsMenu({
             note="Halts scheduling; running agents survive."
             run={() => restartAgentManager()}
           />
+
+          {/* Danger Zone — the full-stop counterpart to Restart Dashboard above.
+              Restart bounces the server so it relaunches; this stops the entire
+              stack for good (both daemons + the server process) and durably
+              disarms the agent watch loop. Destructive two-click confirm, and —
+              unlike Restart — the page does NOT reload, because nothing comes
+              back to reload into. */}
+          <div style={{ height: 1, background: theme.border, margin: '16px 0 12px' }} />
+          <div style={{
+            fontFamily: theme.fontMono, fontSize: 10, fontWeight: 700,
+            letterSpacing: '0.08em', textTransform: 'uppercase', color: theme.red,
+            marginBottom: 12,
+          }}>Danger Zone</div>
+
+          <button
+            onClick={doShutdown}
+            disabled={shutdown === 'shutting-down' || shutdown === 'done'}
+            title="Stop both daemons, kill all terminal sessions, disarm the agent watch loop, and exit the server — the dashboard does not come back"
+            style={{
+              width: '100%',
+              padding: '8px 0',
+              background: `${theme.red}14`,
+              color: theme.red,
+              border: `1px solid ${theme.red}`,
+              borderRadius: theme.radius,
+              cursor: (shutdown === 'shutting-down' || shutdown === 'done') ? 'default' : 'pointer',
+              fontFamily: theme.fontMono, fontSize: 11, fontWeight: 700,
+              letterSpacing: '0.06em', textTransform: 'uppercase',
+              opacity: (shutdown === 'shutting-down' || shutdown === 'done') ? 0.7 : 1,
+            }}
+          >
+            {shutdown === 'confirm'        ? 'Click again to confirm'
+             : shutdown === 'shutting-down' ? 'Shutting down…'
+             : shutdown === 'done'          ? '✓ Dashboard stopped'
+             : shutdown === 'error'         ? '⚠ Did not stop — retry'
+             : '⏻ Exit & Shut Down Everything'}
+          </button>
+
+          <div style={{
+            marginTop: 8,
+            fontFamily: theme.fontMono, fontSize: 9.5, lineHeight: 1.5,
+            color: shutdown === 'done'  ? theme.green
+                 : shutdown === 'error' ? theme.red
+                 : shutdown === 'confirm' ? theme.text2
+                 : theme.text3,
+            textAlign: 'center',
+          }}>
+            {shutdown === 'shutting-down' ? (
+              'Stopping daemons and exiting… this window can be closed once it stops.'
+            ) : shutdown === 'done' ? (
+              'Dashboard stopped. The agent watch loop is disarmed; you can close this window.'
+            ) : shutdown === 'error' ? (
+              'Server did not exit. It may still be running — close the launcher window manually to stop it.'
+            ) : shutdown === 'confirm' ? (
+              <>
+                <span style={{ color: theme.red, fontWeight: 700 }}>This kills every terminal session and exits.</span>{' '}
+                Stops both daemons, kills all terminal sessions, disarms the agent watch loop, and exits the server. The launcher window will not relaunch.
+              </>
+            ) : (
+              'Stops both daemons, kills all terminal sessions, disarms the agent watch loop, and exits the server. The launcher window will not relaunch.'
+            )}
+          </div>
         </div>,
         document.body,
       )}

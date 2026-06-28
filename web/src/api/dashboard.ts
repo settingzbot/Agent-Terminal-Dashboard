@@ -76,3 +76,81 @@ export async function performRestart(
     window.setTimeout(tick, FIRST_PROBE_MS);
   });
 }
+
+// Progress states for the shutdown flow: actively shutting down, confirmed down
+// for good, or the exit didn't take (server still answering after the timeout).
+export type ShutdownState = 'shutting-down' | 'done' | 'error';
+
+// Ask the server to shut down for good. The backend (server/app.py) flushes this
+// 200 and then exits the server process ~0.7s later — and, unlike /api/restart,
+// nothing relaunches it. The request may resolve with the JSON body or may be
+// aborted/rejected as the worker tears down; either way is expected. Returns the
+// parsed JSON body on a clean 200, or null on a non-OK status, an unreadable
+// body, or any thrown/aborted request. Never throws.
+export async function requestShutdown(
+  signal?: AbortSignal,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch('/api/shutdown', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+      signal,
+    });
+    if (!res.ok) return null;
+    try {
+      return (await res.json()) as Record<string, unknown>;
+    } catch {
+      return null; // 200 but body wasn't valid JSON (worker cut us off mid-flush)
+    }
+  } catch {
+    return null; // expected — the server is exiting and may drop the connection
+  }
+}
+
+// Drive a full shutdown: trigger it, then poll /api/health until the server
+// stops answering, confirming the process actually exited.
+//
+//   onState — progress callback ('shutting-down' while polling, 'done' once the
+//             server is confirmed down, 'error' if it's still up at timeout).
+//
+// This is the MIRROR IMAGE of performRestart's polling loop. performRestart waits
+// for the server to come back UP (success == pingHealth() true) because a restart
+// relaunches the process; here the success condition is INVERTED — shutdown
+// succeeds only when the server stays DOWN (success == pingHealth() false),
+// because after a shutdown nothing relaunches and the dashboard is gone for good.
+// A health 200 after the timeout therefore means the exit FAILED, not succeeded.
+export async function performShutdown(
+  onState: (s: ShutdownState) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  onState('shutting-down');
+  // The request often never resolves cleanly (the worker exits mid-response);
+  // ignore the result/error and go straight to confirming the server is down.
+  await requestShutdown(signal);
+
+  const start = Date.now();
+  const FIRST_PROBE_MS = 1000;   // past the server's ~0.7s exit delay
+  const INTERVAL_MS = 500;
+  const TIMEOUT_MS = 15000;
+
+  await new Promise<void>(resolve => {
+    const tick = async () => {
+      const ok = await pingHealth();
+      if (!ok) {
+        // Server stopped answering — the exit took. Shutdown confirmed.
+        onState('done');
+        resolve();
+        return;
+      }
+      if (Date.now() - start > TIMEOUT_MS) {
+        // Still answering health after the timeout ⇒ the exit didn't take.
+        onState('error');
+        resolve();
+        return;
+      }
+      window.setTimeout(tick, INTERVAL_MS);
+    };
+    window.setTimeout(tick, FIRST_PROBE_MS);
+  });
+}
