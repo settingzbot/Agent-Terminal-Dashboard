@@ -41,9 +41,13 @@ import os
 import sys
 from typing import Optional
 
-from shared.proc import windowless_python
-
 _LOG = logging.getLogger(__name__)
+
+# CREATE_NO_WINDOW — spawn the pty-manager with a HIDDEN console: it shows no
+# window, and any console-app child it spawns inherits that hidden console rather
+# than allocating its own visible one. Bare literal per the repo idiom (see
+# shared/github_gateway._NO_WINDOW); only applied under sys.platform == "win32".
+_NO_WINDOW = 0x08000000
 
 MANAGER_PORT = 58999
 MANAGER_HOST = "127.0.0.1"
@@ -121,15 +125,15 @@ async def _spawn_manager(workspace: str) -> None:
     _LOG.info("spawning pty-manager: %s --port %d --workspace %s",
               manager_script, MANAGER_PORT, workspace)
 
-    # DETACHED_PROCESS (0x00000008): don't inherit our console (survives dashboard
-    # exit). The actual no-window guarantee comes from launching pythonw.exe below
-    # — DETACHED_PROCESS alone still flashes python.exe's console in some setups.
-    creationflags = 0x00000008  # DETACHED_PROCESS
+    # CREATE_NO_WINDOW: give the manager a HIDDEN console — it shows no window, and
+    # every console-app child it spawns INHERITS that hidden console instead of
+    # popping its own. (DETACHED_PROCESS would give the manager *no* console, which
+    # is what made child processes flash their own windows.) Survival across a
+    # dashboard tree-kill is unaffected: it comes from the spawn_detached.py
+    # orphaning below, not from this console flag.
+    creationflags = 0
     if sys.platform == "win32":
-        creationflags |= 0x00000200  # CREATE_NEW_PROCESS_GROUP
-
-    # pythonw.exe (GUI subsystem) so the manager never shows a console window.
-    pyexe = windowless_python()
+        creationflags = _NO_WINDOW | 0x00000200  # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
 
     # Use the synchronous subprocess.Popen here because asyncio.create_subprocess_exec
     # on Windows can interact poorly with DETACHED_PROCESS. Popen returns instantly
@@ -142,7 +146,7 @@ async def _spawn_manager(workspace: str) -> None:
     stderr_path = os.path.join(workspace, "logs", "pty_manager.stderr.log")
     os.makedirs(os.path.dirname(stderr_path), exist_ok=True)
 
-    manager_cmd = [pyexe, manager_script,
+    manager_cmd = [sys.executable, manager_script,
                    "--port", str(MANAGER_PORT), "--workspace", workspace]
 
     # RE-PARENT the manager out of our process tree (harden Part 2,
@@ -156,7 +160,7 @@ async def _spawn_manager(workspace: str) -> None:
     # work — self-heal [[footguns#192]] covers a death either way).
     launcher = os.path.join(workspace, "scripts", "spawn_detached.py")
     if os.path.isfile(launcher):
-        spawn_cmd = [pyexe, launcher, "--stderr", stderr_path, "--", *manager_cmd]
+        spawn_cmd = [sys.executable, launcher, "--stderr", stderr_path, "--", *manager_cmd]
         _LOG.info("spawning pty-manager via re-parenting launcher (detached from our tree)")
         subprocess.Popen(
             spawn_cmd,

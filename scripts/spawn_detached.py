@@ -37,10 +37,13 @@ import os
 import subprocess
 import sys
 
-# DETACHED_PROCESS: no inherited console (windowless). CREATE_NEW_PROCESS_GROUP:
-# the target leads its own Ctrl-C/Break group. Neither reparents — the orphaning
-# (this launcher exiting) is what severs the tree; these just keep it quiet.
-_DETACHED_PROCESS = 0x00000008
+# CREATE_NO_WINDOW: the target runs with a HIDDEN console — windowless itself, and
+# its own console-app children inherit that hidden console instead of flashing a
+# new window (DETACHED_PROCESS gives *no* console, which makes children pop their
+# own). CREATE_NEW_PROCESS_GROUP: the target leads its own Ctrl-C/Break group.
+# Neither reparents — the orphaning (this launcher exiting) is what severs the
+# tree; these just keep it quiet.
+_CREATE_NO_WINDOW = 0x08000000
 _CREATE_NEW_PROCESS_GROUP = 0x00000200
 
 
@@ -71,7 +74,7 @@ def main() -> int:
 
     creationflags = 0
     if sys.platform == "win32":
-        creationflags = _DETACHED_PROCESS | _CREATE_NEW_PROCESS_GROUP
+        creationflags = _CREATE_NO_WINDOW | _CREATE_NEW_PROCESS_GROUP
 
     # Open the target's stderr sink. The target inherits its own dup of the
     # handle; this launcher's copy is closed when it exits moments from now.

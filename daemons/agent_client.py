@@ -33,8 +33,6 @@ import logging
 import os
 import sys
 
-from shared.proc import windowless_python
-
 _LOG = logging.getLogger(__name__)
 
 # CREATE_NO_WINDOW — the inspect/kill helpers below shell out to the console apps
@@ -164,15 +162,14 @@ async def _spawn_manager(workspace: str) -> None:
     _LOG.info("spawning agent-manager: %s --port %d --workspace %s",
               manager_script, MANAGER_PORT, workspace)
 
-    # DETACHED_PROCESS (0x00000008): don't inherit our console (survives dashboard
-    # exit). The actual no-window guarantee comes from launching pythonw.exe below
-    # — DETACHED_PROCESS alone still flashes python.exe's console in some setups.
-    creationflags = 0x00000008  # DETACHED_PROCESS
+    # CREATE_NO_WINDOW: give the manager a HIDDEN console — it shows no window, and
+    # every console-app child it spawns during an agent run (git / gh / claude /
+    # pytest) INHERITS that hidden console instead of popping its own. This is what
+    # silences the per-run window flashes. (DETACHED_PROCESS would give the manager
+    # *no* console, so each child allocated its own visible one.)
+    creationflags = 0
     if sys.platform == "win32":
-        creationflags |= 0x00000200  # CREATE_NEW_PROCESS_GROUP
-
-    # pythonw.exe (GUI subsystem) so the manager never shows a console window.
-    pyexe = windowless_python()
+        creationflags = _NO_WINDOW | 0x00000200  # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
 
     # Use the synchronous subprocess.Popen here because asyncio.create_subprocess_exec
     # on Windows can interact poorly with DETACHED_PROCESS. Popen returns instantly
@@ -188,7 +185,7 @@ async def _spawn_manager(workspace: str) -> None:
     stderr_f = open(stderr_path, "ab")
     try:
         subprocess.Popen(
-            [pyexe, manager_script,
+            [sys.executable, manager_script,
              "--port", str(MANAGER_PORT),
              "--workspace", workspace],
             creationflags=creationflags,
