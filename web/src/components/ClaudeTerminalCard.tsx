@@ -78,7 +78,7 @@ import { type Theme, type ThemeSettings } from '../theme';
 import { useKeyboardHeightPx } from '../hooks/useKeyboardHeightPx';
 import { useAgentPulse } from '../hooks/useAgentPulse';
 import { AgentManagerPane } from './AgentManager/AgentManagerPane';
-import { ThemeControls } from './ThemeControls';
+import { SettingsMenu } from './SettingsMenu';
 
 // BOTTOM_TAB_BAR_HEIGHT_CSS inlined from BottomTabBar.tsx to avoid the dependency.
 // Original: 'calc(52px + env(safe-area-inset-bottom, 0px))'
@@ -2562,132 +2562,6 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
             }}>
             +
           </button>
-          {/* Launch-mode picker — selects which command gets auto-typed
-              into the terminal when a new session connects. */}
-          <select
-            value={bootstrapCmd}
-            onChange={e => {
-              const v = e.target.value;
-              setBootstrapCmd(v);
-              try { localStorage.setItem('claudeBootstrapCmd', v); } catch { /* quota / private mode */ }
-            }}
-            aria-label="Launch command for new sessions"
-            style={{
-              marginLeft: isMobile ? 2 : 4,
-              padding: isMobile ? '5px 4px' : '6px 6px',
-              background: 'transparent',
-              color: theme.text2,
-              border: 'none',
-              borderRight: `1px solid ${theme.border}`,
-              cursor: 'pointer',
-              fontFamily: theme.fontMono,
-              fontSize: isMobile ? 9 : 10,
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              flexShrink: 0,
-              outline: 'none',
-              // Remove default OS dropdown chrome for a flat pill-like look.
-              WebkitAppearance: 'none',
-              MozAppearance: 'none',
-              appearance: 'none',
-              borderRadius: 0,
-            }}>
-            {BOOTSTRAP_COMMANDS.map(c => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
-          {/* Terminal font picker — same flat styling as the launch-mode
-              picker. Applies to all open tabs immediately and persists. */}
-          <select
-            value={termFont}
-            onChange={e => handleFontChange(e.target.value)}
-            aria-label="Terminal font"
-            style={{
-              marginLeft: isMobile ? 2 : 4,
-              padding: isMobile ? '5px 4px' : '6px 6px',
-              background: 'transparent',
-              color: theme.text2,
-              border: 'none',
-              borderRight: `1px solid ${theme.border}`,
-              cursor: 'pointer',
-              fontFamily: theme.fontMono,
-              fontSize: isMobile ? 9 : 10,
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              flexShrink: 0,
-              outline: 'none',
-              WebkitAppearance: 'none',
-              MozAppearance: 'none',
-              appearance: 'none',
-              borderRadius: 0,
-            }}>
-            {FONT_CHOICES.map(c => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
-          </select>
-          {/* Terminal font-size picker — same flat styling. Applies to all open
-              tabs immediately and persists. Exposed on desktop and mobile. */}
-          <select
-            value={termFontSize}
-            onChange={e => handleFontSizeChange(parseInt(e.target.value, 10))}
-            aria-label="Terminal font size"
-            style={{
-              marginLeft: 4,
-              padding: '6px 6px',
-              background: 'transparent',
-              color: theme.text2,
-              border: 'none',
-              borderRight: `1px solid ${theme.border}`,
-              cursor: 'pointer',
-              fontFamily: theme.fontMono,
-              fontSize: 10,
-              fontWeight: 600,
-              letterSpacing: '0.04em',
-              flexShrink: 0,
-              outline: 'none',
-              WebkitAppearance: 'none',
-              MozAppearance: 'none',
-              appearance: 'none',
-              borderRadius: 0,
-            }}>
-            {FONT_SIZE_CHOICES.map(s => (
-              <option key={s} value={s}>{s}px</option>
-            ))}
-          </select>
-          {/* Theme color dropdown — hue / saturation / brightness sliders that
-              recolor the whole dashboard live. Owned + persisted in App.tsx. */}
-          <ThemeControls
-            settings={themeSettings}
-            onChange={onThemeChange}
-            theme={theme}
-            accent={accent}
-            isMobile={isMobile}
-          />
-          {/* Split-view toggle (desktop only) — 1/2/3 terminals side by side.
-              Sessions stay alive either way; this only changes how many panes
-              are visible at once. */}
-          {!isMobile && ([1, 2, 3] as const).map(n => (
-            <button
-              key={n}
-              onClick={() => handleLayoutChange(n)}
-              title={n === 1 ? 'Single terminal' : `${n} terminals side by side`}
-              aria-label={`${n}-pane layout`}
-              aria-pressed={layoutCount === n}
-              style={{
-                marginLeft: n === 1 ? 4 : 0,
-                padding: '6px 9px',
-                background: layoutCount === n ? `${accent}14` : 'transparent',
-                color: layoutCount === n ? accent : theme.text3,
-                border: 'none',
-                borderRight: `1px solid ${theme.border}`,
-                cursor: 'pointer',
-                fontFamily: theme.fontMono, fontSize: 9, fontWeight: 700,
-                letterSpacing: '0.12em',
-                flexShrink: 0,
-              }}>
-              {'▮'.repeat(n)}
-            </button>
-          ))}
           {/* Desktop refresh — same dual-purpose handler as the mobile tool-row
               ↻. Closes the WS so the standing reconnect re-pulls the focused
               terminal's full history (the server's serialized pyte screen +
@@ -2774,6 +2648,30 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
               style={{ display: 'none' }}
             />
           )}
+          {/* Settings — far-right gear. Absorbs the launch / font / size / theme
+              / split controls that used to sit loose in the strip, plus the
+              Restart Dashboard action. Rendered on both desktop and mobile. */}
+          <SettingsMenu
+            theme={theme}
+            accent={accent}
+            isMobile={isMobile}
+            bootstrapCmd={bootstrapCmd}
+            bootstrapOptions={BOOTSTRAP_COMMANDS}
+            onBootstrapChange={(v) => {
+              setBootstrapCmd(v);
+              try { localStorage.setItem('claudeBootstrapCmd', v); } catch { /* quota / private mode */ }
+            }}
+            termFont={termFont}
+            fontOptions={FONT_CHOICES}
+            onFontChange={handleFontChange}
+            termFontSize={termFontSize}
+            fontSizeOptions={FONT_SIZE_CHOICES}
+            onFontSizeChange={handleFontSizeChange}
+            themeSettings={themeSettings}
+            onThemeChange={onThemeChange}
+            layoutCount={layoutCount}
+            onLayoutChange={handleLayoutChange}
+          />
         </div>
 
         {/* Terminal host — every session gets its own container; xterm cannot

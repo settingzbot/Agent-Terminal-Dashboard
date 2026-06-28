@@ -52,4 +52,16 @@ Write-Host "Starting Agent Terminal Dashboard on $url" -ForegroundColor Cyan
 Write-Host 'Close this window to stop the server.' -ForegroundColor DarkGray
 Write-Host ''
 
-& $py -m uvicorn server.app:create_app --factory --host $host_ --port $port
+# Run uvicorn in a relaunch loop. The in-app Settings -> "Restart Dashboard"
+# button exits the server with code 42 (RESTART_EXIT_CODE in server/app.py); we
+# catch that and relaunch in THIS same window so the logs and "close to stop"
+# affordance stay put — letting a rebuilt frontend / edited backend take effect
+# without leaving the terminal. Any other exit code (Ctrl-C, window close, a
+# real crash) falls through and ends the loop.
+while ($true) {
+    & $py -m uvicorn server.app:create_app --factory --host $host_ --port $port
+    if ($LASTEXITCODE -ne 42) { break }
+    Write-Host ''
+    Write-Host 'Restarting dashboard (picking up rebuild)...' -ForegroundColor Cyan
+    Write-Host ''
+}

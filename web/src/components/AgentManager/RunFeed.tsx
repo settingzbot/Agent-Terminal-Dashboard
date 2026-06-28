@@ -38,8 +38,6 @@ export const RunFeed = forwardRef<RunFeedHandle, Props>(function RunFeed({ runId
   // Track the last event count so we can auto-scroll on new events
   const prevCount = useRef(0);
 
-  const [autoScroll, setAutoScroll] = useState(true);
-
   const fetchFeed = useCallback(async (signal?: AbortSignal) => {
     try {
       const feed: RunFeedData = await getRunFeed(runId, signal);
