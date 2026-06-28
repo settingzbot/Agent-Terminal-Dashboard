@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+web/dist/
+
+# Agent data (runtime state — not source)
+agents/*.json
+agent_runs/
+watch_gate.json
+supervised.json
+loop_freeze.json
+completed_ack.json
+problems_ack.json
+
+# Logs
+logs/
+*.log
+
+# Uploads
+.tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
