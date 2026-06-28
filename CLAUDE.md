@@ -27,7 +27,7 @@ Both daemons are lazy-spawned on first request and survive server restarts. They
 ```bash
 # Terminal 1 — backend
 pip install -r requirements.txt
-python -m uvicorn server.app:app --host 127.0.0.1 --port 8080
+python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8080
 
 # Terminal 2 — frontend dev server
 cd web

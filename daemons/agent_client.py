@@ -153,7 +153,8 @@ async def _manager_port_open() -> bool:
 async def _spawn_manager(workspace: str) -> None:
     """Spawn trident_agent_manager.py as a detached subprocess.
     Waits asynchronously until the port is listening or timeout expires."""
-    manager_script = os.path.join(workspace, "trident_agent_manager.py")
+    manager_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "agent_manager.py")
     if not os.path.isfile(manager_script):
         _LOG.warning("agent-manager script not found at %s", manager_script)
         return
@@ -341,7 +342,12 @@ class AgentSessionManager:
 
     def _resolve_workspace(self) -> str:
         if self._workspace is None:
-            self._workspace = os.path.dirname(os.path.abspath(__file__))
+            # The data/workspace root is the repo root — the parent of the
+            # daemons/ dir this client module lives in. The manager stores
+            # agents/, agent_runs/, logs/, watch_gate.json etc. under it, and
+            # the re-parenting launcher lives at <workspace>/scripts/.
+            self._workspace = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
         return self._workspace
 
     async def _ensure_once(self) -> None:
@@ -753,10 +759,10 @@ class AgentSessionManager:
                                "missing or unreadable — kill the agent-manager "
                                "process manually")
             cmdline = await asyncio.to_thread(_pid_commandline, pid)
-            if not cmdline or "trident_agent_manager.py" not in cmdline:
+            if not cmdline or "agent_manager.py" not in cmdline:
                 return _result(False, "pid-kill",
                                f"refusing to kill PID {pid}: its command line "
-                               f"does not reference trident_agent_manager.py "
+                               f"does not reference agent_manager.py "
                                f"(stale PID file / recycled PID)")
             killed, kill_detail = await asyncio.to_thread(_force_kill_pid, pid)
             if not killed:

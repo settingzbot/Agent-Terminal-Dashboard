@@ -33,7 +33,7 @@ cd claude-dashboard
 
 # Backend
 pip install -r requirements.txt
-python -m uvicorn server.app:app --host 127.0.0.1 --port 8080
+python -m uvicorn server.app:create_app --factory --host 127.0.0.1 --port 8080
 
 # Frontend (separate terminal)
 cd web
@@ -47,7 +47,7 @@ Open **http://localhost:5173** — the Vite dev server proxies API calls to the 
 
 ```bash
 cd web && npm run build    # builds to web/dist/
-python -m uvicorn server.app:app --host 0.0.0.0 --port 8080
+python -m uvicorn server.app:create_app --factory --host 0.0.0.0 --port 8080
 ```
 
 The server serves the built frontend from `web/dist/`. No separate static file server needed.

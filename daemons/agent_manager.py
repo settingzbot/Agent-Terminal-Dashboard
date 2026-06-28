@@ -96,6 +96,13 @@ import time
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+# This daemon lives in <repo>/daemons/ but imports the repo-root `agents` and
+# `shared` packages. When launched directly (python daemons/agent_manager.py),
+# sys.path[0] is the daemons/ dir, so put the repo root on the path first.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
 from agents.pipeline import (
     IssuePrPipeline,
     build_claude_command,

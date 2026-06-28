@@ -110,7 +110,8 @@ async def _manager_port_open() -> bool:
 async def _spawn_manager(workspace: str) -> None:
     """Spawn trident_pty_manager.py as a detached subprocess.
     Waits asynchronously until the port is listening or timeout expires."""
-    manager_script = os.path.join(workspace, "trident_pty_manager.py")
+    manager_script = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "pty_manager.py")
     if not os.path.isfile(manager_script):
         _LOG.warning("pty-manager script not found at %s", manager_script)
         return
@@ -509,7 +510,11 @@ class TerminalSessionManager:
 
     def _resolve_workspace(self) -> str:
         if self._workspace is None:
-            self._workspace = os.path.dirname(os.path.abspath(__file__))
+            # The workspace root is the repo root — the parent of the daemons/
+            # dir this client module lives in. logs/ and the re-parenting
+            # launcher (<workspace>/scripts/spawn_detached.py) hang off it.
+            self._workspace = os.path.dirname(
+                os.path.dirname(os.path.abspath(__file__)))
         return self._workspace
 
     async def _ensure_once(self) -> None:
@@ -652,10 +657,10 @@ class TerminalSessionManager:
                                "missing or unreadable — kill the pty-manager "
                                "process manually")
             cmdline = await asyncio.to_thread(_pid_commandline, pid)
-            if not cmdline or "trident_pty_manager.py" not in cmdline:
+            if not cmdline or "pty_manager.py" not in cmdline:
                 return _result(False, "pid-kill",
                                f"refusing to kill PID {pid}: its command line "
-                               f"does not reference trident_pty_manager.py "
+                               f"does not reference pty_manager.py "
                                f"(stale PID file / recycled PID)")
             killed, kill_detail = await asyncio.to_thread(_kill_process_tree, pid)
             if not killed:
