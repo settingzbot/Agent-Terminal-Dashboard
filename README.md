@@ -12,7 +12,11 @@ A web-based operations dashboard for [Claude Code](https://claude.ai/claude-code
 
 ## Screenshots
 
-*[Add screenshots of: terminal view, agent manager with run feed, agent form, mobile layout]*
+<img width="1790" height="1038" alt="image" src="https://github.com/user-attachments/assets/2f3e9f2b-9f15-42b6-9404-fc664c7ca78a" />
+<img width="422" height="707" alt="image" src="https://github.com/user-attachments/assets/fd3403bc-2a31-4ae6-8446-6ce3bab9b855" />
+<img width="313" height="483" alt="image" src="https://github.com/user-attachments/assets/fa32b757-910b-4f5d-b1fd-3ff9aaa360f5" />
+
+
 
 ## Quick start
 
