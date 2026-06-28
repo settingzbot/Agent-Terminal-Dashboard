@@ -93,26 +93,34 @@ export const DEFAULT_SATURATION = 95;
 
 // Background tint. A subtle hue wash applied to the PAGE background (bg0) only —
 // surfaces, cards and text stay neutral, so the page reads as gently colored
-// behind a stack of neutral glass. 0 = OFF (neutral bg = the original look, so
-// existing users see no change until they opt in); 1–360 picks the wash hue.
-// The wash is mixed at a fixed gentle strength and keeps bg0's perceived
-// lightness, so the brightness dial still owns dark↔light independently.
+// behind a stack of neutral glass. Two independent dials: `bgTint` picks the
+// wash HUE (0–360, always a valid hue) and `bgTintStrength` sets how strongly
+// bg0 is mixed toward it. The wash keeps bg0's perceived lightness, so the
+// brightness dial still owns dark↔light independently.
 export const BG_TINT_MIN = 0;
 export const BG_TINT_MAX = 360;
-export const DEFAULT_BG_TINT = 0;
-// How vivid the injected hue is (BG_TINT_SAT) and how far bg0 is mixed toward it
-// (BG_TINT_STRENGTH). Tuned low on purpose: a cast, not a color.
+export const DEFAULT_BG_TINT = DEFAULT_HUE;
+
+// Wash strength as a percentage: 0 = OFF (neutral bg = the original look, so
+// existing users see no change until they opt in), 100 = bg0 fully mixed toward
+// the hue. Lightness is preserved either way, so even 100% never blows out — it
+// just reads as a deeper cast. Default off.
+export const BG_TINT_STRENGTH_MIN = 0;
+export const BG_TINT_STRENGTH_MAX = 100;
+export const DEFAULT_BG_TINT_STRENGTH = 0;
+// How vivid the injected hue is. Tuned low on purpose: a cast, not a color. (How
+// far bg0 is mixed toward it is now user-driven via bgTintStrength.)
 const BG_TINT_SAT = 65;
-const BG_TINT_STRENGTH = 0.14;
 
 // The three user-tunable theme dials, persisted as one object. `hue` +
 // `saturation` build the accent (via hslToHex at ACCENT_LIGHTNESS); `brightness`
 // feeds deriveTheme to lerp the whole page dark->light.
 export type ThemeSettings = {
-  hue: number;        // 0–360
-  saturation: number; // 0–100
-  brightness: number; // 0–100
-  bgTint: number;     // 0 = off, 1–360 = background hue wash
+  hue: number;            // 0–360
+  saturation: number;     // 0–100
+  brightness: number;     // 0–100
+  bgTint: number;         // 0–360 — background wash hue (always a valid hue)
+  bgTintStrength: number; // 0–100 — 0 = off, how strongly the wash is mixed in
 };
 
 export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
@@ -120,6 +128,7 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   saturation: DEFAULT_SATURATION,
   brightness: DEFAULT_BRIGHTNESS,
   bgTint: DEFAULT_BG_TINT,
+  bgTintStrength: DEFAULT_BG_TINT_STRENGTH,
 };
 
 const BG0_DARK = '#0f0e0c';
@@ -249,20 +258,26 @@ export function withAlpha(hex: string, a: number): string {
 }
 
 // Wash a hue over a neutral bg color while preserving its perceived lightness,
-// so the brightness dial still drives dark↔light. bgTint 0 passes the neutral
-// color straight through (no tint). Returns hex — several call sites concat
-// alpha onto theme.bg0 (`${theme.bg0}cc`), so this MUST stay #rrggbb.
-function tintBg(bg: string, bgTint: number): string {
-  if (bgTint <= 0) return bg;
+// so the brightness dial still drives dark↔light. strength 0 passes the neutral
+// color straight through (no tint); 100 mixes bg0 fully toward the hue. Returns
+// hex — several call sites concat alpha onto theme.bg0 (`${theme.bg0}cc`), so
+// this MUST stay #rrggbb.
+function tintBg(bg: string, hue: number, strength: number): string {
+  const mix = Math.min(1, strength / 100);
+  if (mix <= 0) return bg;
   const { r, g, b } = parseColor(bg);
   const lightness = ((r + g + b) / 3 / 255) * 100;
-  return lerpHex(bg, hslToHex(bgTint, BG_TINT_SAT, lightness), BG_TINT_STRENGTH);
+  return lerpHex(bg, hslToHex(hue, BG_TINT_SAT, lightness), mix);
 }
 
-export function deriveTheme(brightness: number, bgTint: number = DEFAULT_BG_TINT): Theme {
+export function deriveTheme(
+  brightness: number,
+  bgTint: number = DEFAULT_BG_TINT,
+  bgTintStrength: number = DEFAULT_BG_TINT_STRENGTH,
+): Theme {
   const t = clamp01(brightness / 100);
   const m = smoothstep(FLIP_START, FLIP_END, t);
-  const bg0 = tintBg(lerpHex(BG0_DARK, BG0_LIGHT, t), bgTint);
+  const bg0 = tintBg(lerpHex(BG0_DARK, BG0_LIGHT, t), bgTint, bgTintStrength);
   // bg0Glass is just bg0 at 55% opacity -- cheap version, used by mobile bars.
   // Parse the lerped bg0 hex back to rgb for the rgba string.
   const r = parseInt(bg0.slice(1, 3), 16);

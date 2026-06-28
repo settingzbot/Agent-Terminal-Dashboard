@@ -1,7 +1,8 @@
 // Theme controls — the tab-strip dropdown that tunes the dashboard's primary
-// color. A flat strip button (swatch + ▾) opens a small popover of three
-// sliders: HUE (which color), SATURATION (how vivid), and BRIGHTNESS (the
-// page's dark↔light dial). Plus Dark/Light snaps and a reset to the original
+// color. A flat strip button (swatch + ▾) opens a small popover of sliders: HUE
+// (which color), SATURATION (how vivid), BRIGHTNESS (the page's dark↔light
+// dial), and a background wash pair — BG HUE (which color) + BG STRENGTH (how
+// much, 0 = off). Plus Dark/Light snaps and a reset to the original
 // amber-on-dark default.
 //
 // The owning state lives in App.tsx (persisted to localStorage); this component
@@ -19,7 +20,8 @@ import { createPortal } from 'react-dom';
 import {
   hslToHex,
   HUE_MIN, HUE_MAX, SATURATION_MIN, SATURATION_MAX,
-  BRIGHTNESS_MIN, BRIGHTNESS_MAX, BG_TINT_MIN, BG_TINT_MAX, ACCENT_LIGHTNESS,
+  BRIGHTNESS_MIN, BRIGHTNESS_MAX, BG_TINT_MIN, BG_TINT_MAX,
+  BG_TINT_STRENGTH_MIN, BG_TINT_STRENGTH_MAX, ACCENT_LIGHTNESS,
   DEFAULT_THEME_SETTINGS,
   type Theme, type ThemeSettings,
 } from '../theme';
@@ -40,10 +42,10 @@ const HUE_GRADIENT = `linear-gradient(to right, ${
     .join(', ')
 })`;
 
-// Background-tint track: a neutral gray at the OFF end (value 0) easing into the
-// hue wheel, so the slider's far left reads as "no tint". Muted lightness/sat to
-// hint that the wash itself is subtle, not a full-strength accent.
-const BG_TINT_GRADIENT = `linear-gradient(to right, ${hslToHex(0, 0, 45)} 0%, ${
+// Background-hue track: the full hue wheel (the wash is always a valid hue now;
+// whether it shows at all is governed by the separate Strength dial). Muted sat
+// to hint that the wash itself is subtle, not a full-strength accent.
+const BG_TINT_GRADIENT = `linear-gradient(to right, ${
   [0, 60, 120, 180, 240, 300, 360]
     .map(h => hslToHex(h, 70, 50))
     .join(', ')
@@ -101,6 +103,11 @@ export function ThemeControls({ settings, onChange, theme, accent, isMobile = fa
   }, ${hslToHex(settings.hue, SATURATION_MAX, ACCENT_LIGHTNESS)})`;
   // Brightness track mirrors the page's dark→white lerp endpoints (deriveTheme).
   const brightGradient = 'linear-gradient(to right, #0f0e0c, #ffffff)';
+  // BG-strength track: neutral gray at OFF easing into the CURRENT background
+  // hue, so the dial previews exactly the wash that dragging it up applies.
+  const bgStrengthGradient = `linear-gradient(to right, ${
+    hslToHex(0, 0, 45)
+  }, ${hslToHex(settings.bgTint, 70, 50)})`;
 
   const labelStyle: React.CSSProperties = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
@@ -114,7 +121,7 @@ export function ThemeControls({ settings, onChange, theme, accent, isMobile = fa
   };
 
   const slider = (
-    key: 'hue' | 'saturation' | 'brightness' | 'bgTint',
+    key: 'hue' | 'saturation' | 'brightness' | 'bgTint' | 'bgTintStrength',
     label: string,
     min: number, max: number,
     track: string,
@@ -258,7 +265,8 @@ export function ThemeControls({ settings, onChange, theme, accent, isMobile = fa
           {slider('hue', 'Hue', HUE_MIN, HUE_MAX, HUE_GRADIENT, n => `${Math.round(n)}°`)}
           {slider('saturation', 'Saturation', SATURATION_MIN, SATURATION_MAX, satGradient, n => `${Math.round(n)}%`)}
           {slider('brightness', 'Brightness', BRIGHTNESS_MIN, BRIGHTNESS_MAX, brightGradient, n => `${Math.round(n)}%`)}
-          {slider('bgTint', 'BG Tint', BG_TINT_MIN, BG_TINT_MAX, BG_TINT_GRADIENT, n => n <= 0 ? 'Off' : `${Math.round(n)}°`)}
+          {slider('bgTint', 'BG Hue', BG_TINT_MIN, BG_TINT_MAX, BG_TINT_GRADIENT, n => `${Math.round(n)}°`)}
+          {slider('bgTintStrength', 'BG Strength', BG_TINT_STRENGTH_MIN, BG_TINT_STRENGTH_MAX, bgStrengthGradient, n => n <= 0 ? 'Off' : `${Math.round(n)}%`)}
 
           <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
             {snapBtn('Dark', () => patch({ brightness: BRIGHTNESS_MIN }), settings.brightness <= BRIGHTNESS_MIN)}
