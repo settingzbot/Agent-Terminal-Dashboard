@@ -12,11 +12,12 @@
 // each session gets its own div in the same host area, shown or hidden in
 // place — never reparented.
 //
-// Desktop split view (Nathan, 2026-06-11): a ▮/▮▮/▮▮▮ toggle in the tab strip
-// shows 1–3 sessions side by side. The host becomes a flex row; each visible
-// session's div is ordered into its pane slot via CSS `order` and sized by
-// flex — same DOM elements, style-only changes, so the no-reparenting rule
-// holds. One shared tab strip drives all panes: the last-clicked pane is
+// Desktop split view (Nathan, 2026-06-11): a ▮/▮▮/▮▮▮/▦ toggle in the tab strip
+// shows 1–3 sessions in a single row or 6 in a 3×2 grid. The host becomes a CSS
+// grid; each visible session's div is ordered into its pane slot via CSS `order`
+// (grid auto-placement honors it) and sized by the grid track — same DOM
+// elements, style-only changes, so the no-reparenting rule holds. One shared tab
+// strip drives all panes: the last-clicked pane is
 // "focused" (accent outline) and clicking a tab loads that session into it;
 // clicking a tab already on screen just focuses its pane. Mobile always
 // renders exactly one full-width session (the pane state exists but only the
@@ -118,9 +119,19 @@ const TERM_EXTEND_BOTTOM_PX = 14;
 // bar; only used before the first real measurement ever lands.
 const LAST_KBD_PX_KEY = 'claudeLastKbdPx';
 
-// Desktop split-view layout (1, 2, or 3 panes), persisted across reloads.
+// Desktop split-view layout (1, 2, 3, or 6 panes), persisted across reloads.
 const LAYOUT_KEY = 'claudeTermLayout';
-type LayoutCount = 1 | 2 | 3;
+type LayoutCount = 1 | 2 | 3 | 6;
+// Selectable split counts, in strip order. 1/2/3 lay out as one row of equal
+// columns; 6 is a 3×2 grid. GRID_SHAPE drives the host's grid-template, so the
+// same `order`-based pane slotting fills both a row and a grid.
+const LAYOUT_OPTIONS: readonly LayoutCount[] = [1, 2, 3, 6];
+const GRID_SHAPE: Record<LayoutCount, { cols: number; rows: number }> = {
+  1: { cols: 1, rows: 1 },
+  2: { cols: 2, rows: 1 },
+  3: { cols: 3, rows: 1 },
+  6: { cols: 3, rows: 2 },
+};
 const readLastKbdPx = (): number => {
   try {
     const v = parseInt(localStorage.getItem(LAST_KBD_PX_KEY) ?? '', 10);
@@ -587,7 +598,7 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
     if (isMobile) return 1;
     try {
       const v = parseInt(localStorage.getItem(LAYOUT_KEY) ?? '1', 10);
-      return v === 2 || v === 3 ? v : 1;
+      return v === 2 || v === 3 || v === 6 ? v : 1;
     } catch { return 1; }
   });
   const [paneIds, setPaneIds] = useState<(string | null)[]>(
@@ -2672,27 +2683,29 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
               borderRight: `1px solid ${theme.border}`,
               flexShrink: 0,
             }}>
-              {([1, 2, 3] as const).map(n => (
+              {LAYOUT_OPTIONS.map((n, i) => (
                 <button
                   key={n}
                   onClick={() => handleLayoutChange(n)}
-                  title={n === 1 ? 'Single terminal' : `${n} terminals side by side`}
+                  title={n === 1 ? 'Single terminal'
+                       : n === 6 ? '6 terminals (3×2 grid)'
+                       : `${n} terminals side by side`}
                   aria-pressed={layoutCount === n}
                   style={{
                     padding: '4px 9px',
                     background: layoutCount === n ? `${accent}1f` : 'transparent',
                     color: layoutCount === n ? accent : theme.text3,
                     border: `1px solid ${layoutCount === n ? accent : theme.border}`,
-                    // Join the three into one segmented strip.
-                    borderRadius: n === 1 ? `${theme.radius}px 0 0 ${theme.radius}px`
-                                : n === 3 ? `0 ${theme.radius}px ${theme.radius}px 0`
+                    // Join the segments into one strip — only the two ends round.
+                    borderRadius: i === 0 ? `${theme.radius}px 0 0 ${theme.radius}px`
+                                : i === LAYOUT_OPTIONS.length - 1 ? `0 ${theme.radius}px ${theme.radius}px 0`
                                 : 0,
-                    marginLeft: n === 1 ? 0 : -1,
+                    marginLeft: i === 0 ? 0 : -1,
                     cursor: 'pointer',
                     fontFamily: theme.fontMono, fontSize: 9, fontWeight: 700,
                     letterSpacing: '0.12em',
                   }}>
-                  {'▮'.repeat(n)}
+                  {n === 6 ? '▦' : '▮'.repeat(n)}
                 </button>
               ))}
             </div>
@@ -2813,8 +2826,9 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
             show/hide them in place.
             Mobile: position:relative box, containers absolutely positioned
             with overdraw (edge-to-edge, padding 0), exactly one visible.
-            Desktop: flex row — visible containers become equal-width flex
-            children ordered into their pane slot; hidden ones display:none.
+            Desktop: CSS grid — visible containers become grid cells ordered
+            into their pane slot (1/2/3 = one row, 6 = 3×2); hidden ones
+            display:none.
             On mobile we also reserve room above the keyboard for the chat
             box + tool row so they don't sit on top of the terminal output. */}
         <div
@@ -2825,7 +2839,14 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
             width: '100%',
             padding: isMobile ? 0 : 8,
             minHeight: isMobile ? 360 : 0,
-            ...(isMobile ? {} : { display: 'flex' as const, flexDirection: 'row' as const, gap: 8 }),
+            ...(isMobile ? {} : {
+              display: 'grid' as const,
+              // 1/2/3 → one row of N columns; 6 → 3×2. Each pane's `order` slots
+              // it into the right cell (grid auto-placement honors `order`).
+              gridTemplateColumns: `repeat(${GRID_SHAPE[layoutCount].cols}, 1fr)`,
+              gridTemplateRows: `repeat(${GRID_SHAPE[layoutCount].rows}, 1fr)`,
+              gap: 8,
+            }),
             // Agent Manager open → hide the terminal host (panes stay mounted so
             // sessions survive) and show AgentManagerPane below instead.
             ...(showAgents ? { display: 'none' as const } : {}),
@@ -2869,11 +2890,12 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
                   // behind the strip (Nathan, 2026-06-10).
                   zIndex: 0,
                 } : {
-                  // Desktop pane: equal share of the row, slotted into pane
-                  // order. minWidth 0 lets the flex item shrink below the
-                  // terminal's intrinsic width so fit() controls the columns.
-                  flex: '1 1 0%',
+                  // Desktop pane: one grid cell, slotted into pane order via
+                  // `order` (grid auto-placement honors it). minWidth/minHeight 0
+                  // let the cell shrink below the terminal's intrinsic size so
+                  // fit() controls the cols/rows.
                   minWidth: 0,
+                  minHeight: 0,
                   position: 'relative',
                   order: visible ? paneIdx : 0,
                   display: visible ? 'block' : 'none',
@@ -2897,10 +2919,12 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
                 key={`empty-pane-${i}`}
                 onMouseDown={() => setFocusedPane(i)}
                 style={{
-                  flex: '1 1 0%',
                   minWidth: 0,
+                  minHeight: 0,
                   order: i,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: 8,
+                  overflow: 'hidden',
                   border: `1px dashed ${i === focusedPane ? `${accent}88` : theme.border}`,
                   borderRadius: 4,
                   color: theme.text3,
