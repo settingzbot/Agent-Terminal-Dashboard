@@ -22,7 +22,7 @@ import { performRestart, performShutdown } from '../api/dashboard';
 import { restartTerminalManager } from '../api/terminal';
 import { restartAgentManager } from '../api/agents';
 import { ThemeControls } from './ThemeControls';
-import type { Theme, ThemeSettings } from '../theme';
+import type { BackgroundMode, Theme, ThemeSettings } from '../theme';
 
 type Option<T extends string | number> = { value: T; label: string };
 
@@ -33,6 +33,14 @@ const METHOD_LABEL: Record<string, string> = {
   'pid-kill': 'force-stopped',
   'not-running': 'was not running',
 };
+
+// Background field choices for the Appearance picker. Values match
+// ThemeSettings['backgroundMode']; 'none' reads as "Flat" to the operator.
+const BACKGROUND_OPTIONS: readonly Option<BackgroundMode>[] = [
+  { value: 'none', label: 'Flat' },
+  { value: 'constellation', label: 'Constellation' },
+  { value: 'fishtank', label: 'Fish Tank' },
+];
 
 type Props = {
   theme: Theme;
@@ -53,9 +61,6 @@ type Props = {
   // Theme dials (threaded through to the embedded ThemeControls).
   themeSettings: ThemeSettings;
   onThemeChange: (next: ThemeSettings) => void;
-  // Desktop split-view: how many terminals show side by side (1–3).
-  layoutCount: 1 | 2 | 3;
-  onLayoutChange: (n: 1 | 2 | 3) => void;
 };
 
 type RestartState = 'idle' | 'restarting' | 'error';
@@ -66,7 +71,6 @@ export function SettingsMenu({
   termFont, fontOptions, onFontChange,
   termFontSize, fontSizeOptions, onFontSizeChange,
   themeSettings, onThemeChange,
-  layoutCount, onLayoutChange,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [restart, setRestart] = useState<RestartState>('idle');
@@ -179,31 +183,6 @@ export function SettingsMenu({
     </div>
   );
 
-  // Split-view 1/2/3 segmented control (desktop only).
-  const layoutBtn = (n: 1 | 2 | 3) => (
-    <button
-      key={n}
-      onClick={() => onLayoutChange(n)}
-      title={n === 1 ? 'Single terminal' : `${n} terminals side by side`}
-      aria-pressed={layoutCount === n}
-      style={{
-        padding: '5px 10px',
-        background: layoutCount === n ? `${accent}1f` : 'transparent',
-        color: layoutCount === n ? accent : theme.text3,
-        border: `1px solid ${layoutCount === n ? accent : theme.border}`,
-        // Join the three into one segmented strip.
-        borderRadius: n === 1 ? `${theme.radius}px 0 0 ${theme.radius}px`
-                    : n === 3 ? `0 ${theme.radius}px ${theme.radius}px 0`
-                    : 0,
-        marginLeft: n === 1 ? 0 : -1,
-        cursor: 'pointer',
-        fontFamily: theme.fontMono, fontSize: 9, fontWeight: 700,
-        letterSpacing: '0.12em',
-      }}>
-      {'▮'.repeat(n)}
-    </button>
-  );
-
   return (
     <>
       <button
@@ -300,6 +279,24 @@ export function SettingsMenu({
             </select>
           ))}
 
+          {/* Background — flat tone, animated constellation, or the pixel-art
+              fish tank. Drawn behind the terminal in App.tsx. */}
+          {labeledSelect('Background', (
+            <select
+              value={themeSettings.backgroundMode}
+              onChange={e => onThemeChange({
+                ...themeSettings,
+                backgroundMode: e.target.value as BackgroundMode,
+              })}
+              aria-label="Dashboard background"
+              style={selectStyle}
+            >
+              {BACKGROUND_OPTIONS.map(o => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          ))}
+
           {/* Theme row — the embedded swatch button opens its own color panel. */}
           <div style={rowStyle}>
             <span style={labelStyle}>Theme</span>
@@ -311,16 +308,6 @@ export function SettingsMenu({
               isMobile={isMobile}
             />
           </div>
-
-          {/* Split-view layout — desktop only (mobile always shows one pane). */}
-          {!isMobile && (
-            <div style={rowStyle}>
-              <span style={labelStyle}>Split</span>
-              <div style={{ display: 'flex' }}>
-                {([1, 2, 3] as const).map(layoutBtn)}
-              </div>
-            </div>
-          )}
 
           <div style={{ height: 1, background: theme.border, margin: '6px 0 14px' }} />
 

@@ -2661,6 +2661,42 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
             }}>
             +
           </button>
+          {/* Desktop split-view layout — 1/2/3 terminals side by side. Lived in
+              the Settings gear briefly; moved back into the strip (right after
+              the + button) for one-click reach (Nathan, 2026-06-28). Mobile
+              always renders a single full-width pane, so it's desktop-only. */}
+          {!isMobile && (
+            <div style={{
+              display: 'flex', alignItems: 'center',
+              padding: '0 10px',
+              borderRight: `1px solid ${theme.border}`,
+              flexShrink: 0,
+            }}>
+              {([1, 2, 3] as const).map(n => (
+                <button
+                  key={n}
+                  onClick={() => handleLayoutChange(n)}
+                  title={n === 1 ? 'Single terminal' : `${n} terminals side by side`}
+                  aria-pressed={layoutCount === n}
+                  style={{
+                    padding: '4px 9px',
+                    background: layoutCount === n ? `${accent}1f` : 'transparent',
+                    color: layoutCount === n ? accent : theme.text3,
+                    border: `1px solid ${layoutCount === n ? accent : theme.border}`,
+                    // Join the three into one segmented strip.
+                    borderRadius: n === 1 ? `${theme.radius}px 0 0 ${theme.radius}px`
+                                : n === 3 ? `0 ${theme.radius}px ${theme.radius}px 0`
+                                : 0,
+                    marginLeft: n === 1 ? 0 : -1,
+                    cursor: 'pointer',
+                    fontFamily: theme.fontMono, fontSize: 9, fontWeight: 700,
+                    letterSpacing: '0.12em',
+                  }}>
+                  {'▮'.repeat(n)}
+                </button>
+              ))}
+            </div>
+          )}
           {/* Desktop refresh — same dual-purpose handler as the mobile tool-row
               ↻. Closes the WS so the standing reconnect re-pulls the focused
               terminal's full history (the server's serialized pyte screen +
@@ -2748,8 +2784,9 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
             />
           )}
           {/* Settings — far-right gear. Absorbs the launch / font / size / theme
-              / split controls that used to sit loose in the strip, plus the
-              Restart Dashboard action. Rendered on both desktop and mobile. */}
+              controls that used to sit loose in the strip, plus the Restart
+              Dashboard action. (Split layout moved back into the strip, just
+              after the + button.) Rendered on both desktop and mobile. */}
           <SettingsMenu
             theme={theme}
             accent={accent}
@@ -2768,8 +2805,6 @@ export function ClaudeTerminalCard({ theme, accent, themeSettings, onThemeChange
             onFontSizeChange={handleFontSizeChange}
             themeSettings={themeSettings}
             onThemeChange={onThemeChange}
-            layoutCount={layoutCount}
-            onLayoutChange={handleLayoutChange}
           />
         </div>
 

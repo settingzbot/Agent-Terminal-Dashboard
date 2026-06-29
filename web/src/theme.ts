@@ -112,15 +112,24 @@ export const DEFAULT_BG_TINT_STRENGTH = 0;
 // far bg0 is mixed toward it is now user-driven via bgTintStrength.)
 const BG_TINT_SAT = 65;
 
-// The three user-tunable theme dials, persisted as one object. `hue` +
-// `saturation` build the accent (via hslToHex at ACCENT_LIGHTNESS); `brightness`
-// feeds deriveTheme to lerp the whole page dark->light.
+// Page background style. 'none' = the original flat tone (bg0) only.
+// 'constellation' = the animated drifting-nodes canvas drawn over that tone.
+// 'fishtank' = the pixel-art aquarium scene (paints its own water). Ported from
+// Trident's dashboard, where the background was operator-selectable.
+export type BackgroundMode = 'none' | 'constellation' | 'fishtank';
+export const DEFAULT_BACKGROUND_MODE: BackgroundMode = 'none';
+
+// The user-tunable theme dials, persisted as one object. `hue` + `saturation`
+// build the accent (via hslToHex at ACCENT_LIGHTNESS); `brightness` feeds
+// deriveTheme to lerp the whole page dark->light; `backgroundMode` picks which
+// animated/flat field renders behind the terminal.
 export type ThemeSettings = {
   hue: number;            // 0–360
   saturation: number;     // 0–100
   brightness: number;     // 0–100
   bgTint: number;         // 0–360 — background wash hue (always a valid hue)
   bgTintStrength: number; // 0–100 — 0 = off, how strongly the wash is mixed in
+  backgroundMode: BackgroundMode; // flat tone vs constellation vs fish tank
 };
 
 export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
@@ -129,6 +138,7 @@ export const DEFAULT_THEME_SETTINGS: ThemeSettings = {
   brightness: DEFAULT_BRIGHTNESS,
   bgTint: DEFAULT_BG_TINT,
   bgTintStrength: DEFAULT_BG_TINT_STRENGTH,
+  backgroundMode: DEFAULT_BACKGROUND_MODE,
 };
 
 const BG0_DARK = '#0f0e0c';
@@ -304,6 +314,14 @@ export function deriveTheme(
     bg0Glass: `rgba(${r},${g},${b},0.55)`,
     panelBg: mixColor(panelBgDark, PANEL_BG_LIGHT, m),
   };
+}
+
+// Outer vignette for the constellation background — a dark radial that pulls the
+// eye to the center. Fades to transparent as brightness rises so Light mode's
+// pale page isn't tinted murky in the corners. (Ported from Trident.)
+export function deriveVignette(brightness: number): string {
+  const t = clamp01(brightness / 100);
+  return `rgba(0,0,0,${((1 - t) * 0.45).toFixed(3)})`;
 }
 
 export const DENSITIES: Record<DensityKey, Density> = {
