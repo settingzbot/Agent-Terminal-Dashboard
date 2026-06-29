@@ -210,4 +210,19 @@ def create_app() -> FastAPI:
             async def serve_index():
                 return FileResponse(index_file)
 
+        # Root-level static files (favicon) live at the dist root, not /assets.
+        favicon_png = WEB_DIST_DIR / "favicon.png"
+        if favicon_png.is_file():
+
+            @app.get("/favicon.png", include_in_schema=False)
+            async def serve_favicon_png():
+                return FileResponse(favicon_png)
+
+        favicon_ico = WEB_DIST_DIR / "favicon.ico"
+        if favicon_ico.is_file():
+
+            @app.get("/favicon.ico", include_in_schema=False)
+            async def serve_favicon_ico():
+                return FileResponse(favicon_ico)
+
     return app
